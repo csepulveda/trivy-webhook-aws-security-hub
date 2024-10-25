@@ -81,6 +81,11 @@ func ProcessTrivyWebhook(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error processing report: %v", err)
 			return
 		}
+		fmt.Println("--VulnerabilityReport--")
+		// dump the findings
+		for _, finding := range findings {
+			fmt.Println(finding)
+		}
 	default: // Unknown report type
 		http.Error(w, "unknown report type", http.StatusBadRequest)
 		log.Printf("unknown report type: %s", report.Kind)
