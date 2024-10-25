@@ -81,11 +81,6 @@ func ProcessTrivyWebhook(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error processing report: %v", err)
 			return
 		}
-		fmt.Println("--VulnerabilityReport--")
-		// dump the findings
-		for _, finding := range findings {
-			fmt.Println(finding)
-		}
 	default: // Unknown report type
 		http.Error(w, "unknown report type", http.StatusBadRequest)
 		log.Printf("unknown report type: %s", report.Kind)
@@ -150,8 +145,8 @@ func getConfigAuditReportFindings(body []byte) ([]types.AwsSecurityFinding, erro
 
 		// Truncate description if too long
 		description := check.Description
-		if len(description) > 512 {
-			description = description[:512] + "..."
+		if len(description) > 1024 {
+			description = description[:1024] + "..."
 		}
 
 		findings = append(findings, types.AwsSecurityFinding{
@@ -270,8 +265,8 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 	Container := vulnerabilityReport.Labels["trivy-operator.container.name"]
 	Registry := vulnerabilityReport.Report.Registry.Server
 	Repository := vulnerabilityReport.Report.Artifact.Repository
-	Digest := vulnerabilityReport.Report.Artifact.Digest
-	FullImageName := fmt.Sprintf("%s/%s:%s", Registry, Repository, Digest)
+	Tag := vulnerabilityReport.Report.Artifact.Tag
+	FullImageName := fmt.Sprintf("%s/%s:%s", Registry, Repository, Tag)
 	ImageName := fmt.Sprintf("%s/%s", Registry, Repository)
 
 	// Prepare findings for AWS Security Hub BatchImportFindings API
@@ -290,29 +285,6 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 			description = description[:1024] + "..."
 		}
 
-		// dump the findings with key values
-		fmt.Println("Id: %s-%s", FullImageName, vulnerabilities.VulnerabilityID)
-		fmt.Println("ProductArn: %s", ProductArn)
-		fmt.Println("GeneratorId: %s", fmt.Sprintf("Trivy/%s", vulnerabilities.VulnerabilityID))
-		fmt.Println("AwsAccountId: %s", AWSAccountID)
-		fmt.Println("Types: %s", []string{"Software and Configuration Checks/Vulnerabilities/CVE"})
-		fmt.Println("CreatedAt: %s", time.Now().Format(time.RFC3339))
-		fmt.Println("UpdatedAt: %s", time.Now().Format(time.RFC3339))
-		fmt.Println("Severity: %s", severity)
-		fmt.Println("Title: %s", fmt.Sprintf("Trivy found a vulnerability in %s/%s related to %s", ImageName, Container, vulnerabilities.VulnerabilityID))
-		fmt.Println("Description: %s", description)
-		fmt.Println("Remediation: %s", fmt.Sprintf("Upgrade to version %s", vulnerabilities.FixedVersion))
-		fmt.Println("Url: %s", vulnerabilities.PrimaryLink)
-		fmt.Println("ProductFields: %s", map[string]string{"Product Name": "Trivy"})
-		fmt.Println("Container Image: %s", ImageName)
-		fmt.Println("CVE ID: %s", vulnerabilities.VulnerabilityID)
-		fmt.Println("CVE Title: %s", vulnerabilities.Title)
-		fmt.Println("PkgName: %s", vulnerabilities.Resource)
-		fmt.Println("Installed Package: %s", vulnerabilities.InstalledVersion)
-		fmt.Println("Patched Package: %s", vulnerabilities.FixedVersion)
-		fmt.Println("NvdCvssScoreV3: %f", tools.GetVulnScore(vulnerabilities))
-		fmt.Println("NvdCvssVectorV3: %s", "")
-			
 		findings = append(findings, types.AwsSecurityFinding{
 			SchemaVersion: aws.String("2018-10-08"),
 			Id:            aws.String(fmt.Sprintf("%s-%s", FullImageName, vulnerabilities.VulnerabilityID)),
