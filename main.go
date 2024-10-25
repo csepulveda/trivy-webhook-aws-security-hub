@@ -290,9 +290,29 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 			description = description[:512] + "..."
 		}
 
-		// dump the findings
-		fmt.Println("Vulnerability: ", vulnerabilities)
-
+		// dump the findings with key values
+		fmt.Println("Id: %s-%s", FullImageName, vulnerabilities.VulnerabilityID)
+		fmt.Println("ProductArn: %s", ProductArn)
+		fmt.Println("GeneratorId: %s", fmt.Sprintf("Trivy/%s", vulnerabilities.VulnerabilityID))
+		fmt.Println("AwsAccountId: %s", AWSAccountID)
+		fmt.Println("Types: %s", []string{"Software and Configuration Checks/Vulnerabilities/CVE"})
+		fmt.Println("CreatedAt: %s", time.Now().Format(time.RFC3339))
+		fmt.Println("UpdatedAt: %s", time.Now().Format(time.RFC3339))
+		fmt.Println("Severity: %s", severity)
+		fmt.Println("Title: %s", fmt.Sprintf("Trivy found a vulnerability in %s/%s related to %s", ImageName, Container, vulnerabilities.VulnerabilityID))
+		fmt.Println("Description: %s", description)
+		fmt.Println("Remediation: %s", fmt.Sprintf("Upgrade to version %s", vulnerabilities.FixedVersion))
+		fmt.Println("Url: %s", vulnerabilities.PrimaryLink)
+		fmt.Println("ProductFields: %s", map[string]string{"Product Name": "Trivy"})
+		fmt.Println("Container Image: %s", ImageName)
+		fmt.Println("CVE ID: %s", vulnerabilities.VulnerabilityID)
+		fmt.Println("CVE Title: %s", vulnerabilities.Title)
+		fmt.Println("PkgName: %s", vulnerabilities.Resource)
+		fmt.Println("Installed Package: %s", vulnerabilities.InstalledVersion)
+		fmt.Println("Patched Package: %s", vulnerabilities.FixedVersion)
+		fmt.Println("NvdCvssScoreV3: %f", tools.GetVulnScore(vulnerabilities))
+		fmt.Println("NvdCvssVectorV3: %s", "")
+			
 		findings = append(findings, types.AwsSecurityFinding{
 			SchemaVersion: aws.String("2018-10-08"),
 			Id:            aws.String(fmt.Sprintf("%s-%s", FullImageName, vulnerabilities.VulnerabilityID)),
