@@ -290,6 +290,9 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 			description = description[:512] + "..."
 		}
 
+		// dump the findings
+		fmt.Println("Vulnerability: ", vulnerabilities)
+
 		findings = append(findings, types.AwsSecurityFinding{
 			SchemaVersion: aws.String("2018-10-08"),
 			Id:            aws.String(fmt.Sprintf("%s-%s", FullImageName, vulnerabilities.VulnerabilityID)),
