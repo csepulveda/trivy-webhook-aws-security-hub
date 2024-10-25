@@ -286,8 +286,8 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 
 		// Truncate description if too long
 		description := vulnerabilities.Title
-		if len(description) > 512 {
-			description = description[:512] + "..."
+		if len(description) > 1024 {
+			description = description[:1024] + "..."
 		}
 
 		// dump the findings with key values
