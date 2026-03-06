@@ -33,12 +33,14 @@ fullnameOverride: ""
 ## @description config.CONFIG_AUDIT_ENABLE: Enable configuration audit.
 ## @description config.CLUSTER_COMPLIANCE_ENABLE: Enable cluster compliance.
 ## @description config.VULNERABILITY_ENABLE: Enable vulnerability assessment.
+## @description config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID: Include AWS Account ID in finding ID.
 config:
   AWS_REGION: eu-central-1
   INFRA_ASSESSMENT_ENABLE: false
   CONFIG_AUDIT_ENABLE: false
   CLUSTER_COMPLIANCE_ENABLE: false
   VULNERABILITY_ENABLE: true
+  INCLUDE_ACCOUNT_ID_IN_FINDING_ID: false
 
 ## @param extraenvs [array] Extra environment variables to set for the trivy-webhook container.
 ## @description Extra environment variables to set for the trivy-webhook container.

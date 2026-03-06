@@ -66,15 +66,16 @@ curl -X POST -H "Content-Type: application/json" --data @result.json http://loca
 
 ## ⚙️ Environment Variables
 
-| Variable Name               | Description                                              | Default  |
-|----------------------------|----------------------------------------------------------|----------|
-| `INFRA_ASSESSMENT_ENABLE`   | Enable processing of InfraAssessmentReport              | `false`  |
-| `CONFIG_AUDIT_ENABLE`       | Enable processing of ConfigAuditReport                  | `false`  |
-| `CLUSTER_COMPLIANCE_ENABLE` | Enable processing of ClusterComplianceReport            | `false`  |
-| `VULNERABILITY_ENABLE`      | Enable processing of VulnerabilityReport                | `true`   |
-| `AWS_ACCESS_KEY_ID`         | AWS Access Key (standard AWS SDK var)                   | *N/A*    |
-| `AWS_SECRET_ACCESS_KEY`     | AWS Secret Key (standard AWS SDK var)                   | *N/A*    |
-| `AWS_REGION`                | AWS Region where Security Hub is enabled                | *N/A*    |
+| Variable Name                          | Description                                                                   | Default |
+| -------------------------------------- | ----------------------------------------------------------------------------- | ------- |
+| `INFRA_ASSESSMENT_ENABLE`              | Enable processing of InfraAssessmentReport                                    | `false` |
+| `CONFIG_AUDIT_ENABLE`                  | Enable processing of ConfigAuditReport                                        | `false` |
+| `CLUSTER_COMPLIANCE_ENABLE`            | Enable processing of ClusterComplianceReport                                  | `false` |
+| `VULNERABILITY_ENABLE`                 | Enable processing of VulnerabilityReport                                      | `true`  |
+| `INCLUDE_ACCOUNT_ID_IN_FINDING_ID`     | Include AWS Account ID in the finding ID to ensure uniqueness across accounts | `false` |
+| `AWS_ACCESS_KEY_ID`                    | AWS Access Key (standard AWS SDK var)                                         | *N/A*   |
+| `AWS_SECRET_ACCESS_KEY`                | AWS Secret Key (standard AWS SDK var)                                         | *N/A*   |
+| `AWS_REGION`                           | AWS Region where Security Hub is enabled                                      | *N/A*   |
 
 Example configuration:
 
