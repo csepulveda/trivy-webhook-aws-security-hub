@@ -62,7 +62,7 @@ All configuration is done via `values.yaml` or `--set` in the Helm CLI.
 | `config.CONFIG_AUDIT_ENABLE`              | Enable Config Audit report processing                                         | `"false"`       |
 | `config.CLUSTER_COMPLIANCE_ENABLE`        | Enable Cluster Compliance report processing                                   | `"false"`       |
 | `config.VULNERABILITY_ENABLE`             | Enable Vulnerability report processing                                        | `"true"`        |
-| `config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Include AWS Account ID in the finding ID to ensure uniqueness across accounts | `"true"`        |
+| `config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Include AWS Account ID in the finding ID to ensure uniqueness across accounts | `"false"`        |
 > These environment variables control what types of Trivy reports are processed and sent to AWS Security Hub.
 
 ---
