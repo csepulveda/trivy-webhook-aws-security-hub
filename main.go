@@ -146,7 +146,6 @@ func ProcessTrivyWebhook(cfg Config) http.HandlerFunc {
 func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecurityFinding, error) {
 	configAuditReport := &v1alpha1.ConfigAuditReport{}
 
-	// Decode JSON
 	err := json.Unmarshal(body, &configAuditReport)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding JSON: %v", err)
@@ -154,35 +153,40 @@ func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecuri
 
 	log.Printf("Processing report: %s", configAuditReport.Name)
 
-	// Prepare findings for AWS Security Hub BatchImportFindings API
-	var findings []types.AwsSecurityFinding
-
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("unable to load SDK config: %v", err)
 	}
 
-	// Create AWS STS clients
 	stsClient := sts.NewFromConfig(cfg)
 	callerIdentity, err := stsClient.GetCallerIdentity(context.TODO(), &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get caller identity: %w", err)
 	}
 
-	// Prepare variables
 	AWSAccountID := aws.ToString(callerIdentity.Account)
 	AWSRegion := cfg.Region
-	ProductArn := fmt.Sprintf("arn:aws:securityhub:%s::product/aquasecurity/aquasecurity", AWSRegion)
-	Name := fmt.Sprintf("%s/%s", configAuditReport.OwnerReferences[0].Kind, configAuditReport.OwnerReferences[0].Name)
 
-	// Handle Checks
+	return buildConfigAuditReportFindings(configAuditReport, AWSAccountID, AWSRegion, appCfg), nil
+}
+
+func buildConfigAuditReportFindings(configAuditReport *v1alpha1.ConfigAuditReport, AWSAccountID string, AWSRegion string, appCfg Config) []types.AwsSecurityFinding {
+	ProductArn := fmt.Sprintf("arn:aws:securityhub:%s::product/aquasecurity/aquasecurity", AWSRegion)
+
+	var Name string
+	if len(configAuditReport.OwnerReferences) > 0 {
+		Name = fmt.Sprintf("%s/%s", configAuditReport.OwnerReferences[0].Kind, configAuditReport.OwnerReferences[0].Name)
+	} else {
+		Name = configAuditReport.Name
+	}
+
+	var findings []types.AwsSecurityFinding
 	for _, check := range configAuditReport.Report.Checks {
 		severity := check.Severity
 		if severity == "UNKNOWN" {
 			severity = "INFORMATIONAL"
 		}
 
-		// Truncate description if too long
 		description := check.Description
 		if len(description) > 1024 {
 			description = description[:1021] + "..."
@@ -199,6 +203,11 @@ func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecuri
 		productFields := map[string]string{"Product Name": "Trivy"}
 		if appCfg.ClusterName != "" {
 			productFields["ClusterName"] = appCfg.ClusterName
+		}
+
+		message := ""
+		if len(check.Messages) > 0 {
+			message = check.Messages[0]
 		}
 
 		findings = append(findings, types.AwsSecurityFinding{
@@ -227,7 +236,7 @@ func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecuri
 					Region:    aws.String(AWSRegion),
 					Details: &types.ResourceDetails{
 						Other: map[string]string{
-							"Message": check.Messages[0],
+							"Message": message,
 						},
 					},
 				},
@@ -236,7 +245,7 @@ func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecuri
 		})
 	}
 
-	return findings, nil
+	return findings
 }
 
 func getInfraAssessmentReport(body []byte, appCfg Config) ([]types.AwsSecurityFinding, error) {

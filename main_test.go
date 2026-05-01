@@ -154,6 +154,58 @@ func TestBuildVulnerabilityReportFindingsClusterName(t *testing.T) {
 	assert.NotEqual(t, aws.ToString(withCluster[0].Id), aws.ToString(devCluster[0].Id))
 }
 
+func TestBuildConfigAuditReportFindingsNoOwnerReferences(t *testing.T) {
+	report := &v1alpha1.ConfigAuditReport{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "cluster-level-report",
+			OwnerReferences: nil,
+		},
+		Report: v1alpha1.ConfigAuditReportData{
+			Checks: []v1alpha1.Check{
+				{
+					ID:       "KSV001",
+					Title:    "no privileged containers",
+					Severity: "HIGH",
+					Messages: []string{"container foo is privileged"},
+				},
+			},
+		},
+	}
+
+	findings := buildConfigAuditReportFindings(report, "123456789012", "eu-central-1", Config{})
+
+	require.Len(t, findings, 1)
+	assert.Contains(t, aws.ToString(findings[0].Id), "cluster-level-report")
+	assert.Contains(t, aws.ToString(findings[0].Title), "cluster-level-report")
+	assert.Equal(t, "container foo is privileged", findings[0].Resources[0].Details.Other["Message"])
+}
+
+func TestBuildConfigAuditReportFindingsEmptyMessages(t *testing.T) {
+	report := &v1alpha1.ConfigAuditReport{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "some-report",
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: "Deployment", Name: "nginx"},
+			},
+		},
+		Report: v1alpha1.ConfigAuditReportData{
+			Checks: []v1alpha1.Check{
+				{
+					ID:       "KSV002",
+					Title:    "check with no messages",
+					Severity: "LOW",
+					Messages: nil,
+				},
+			},
+		},
+	}
+
+	findings := buildConfigAuditReportFindings(report, "123456789012", "eu-central-1", Config{})
+
+	require.Len(t, findings, 1)
+	assert.Equal(t, "", findings[0].Resources[0].Details.Other["Message"])
+}
+
 func TestTruncateWithHash(t *testing.T) {
 	short := "short-value"
 	assert.Equal(t, short, truncateWithHash(short, 512))
