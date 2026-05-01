@@ -33,6 +33,7 @@ type Config struct {
 	ClusterComplianceEnable     bool
 	VulnerabilityEnable         bool
 	IncludeAccountIDInFindingID bool
+	ClusterName                 string
 }
 
 // LoadConfig reads feature flags from environment variables.
@@ -43,6 +44,7 @@ func LoadConfig() Config {
 		ClusterComplianceEnable:     tools.ParseEnvBool("CLUSTER_COMPLIANCE_ENABLE", true),
 		VulnerabilityEnable:         tools.ParseEnvBool("VULNERABILITY_ENABLE", true),
 		IncludeAccountIDInFindingID: tools.ParseEnvBool("INCLUDE_ACCOUNT_ID_IN_FINDING_ID", false),
+		ClusterName:                 os.Getenv("CLUSTER_NAME"),
 	}
 }
 
@@ -190,6 +192,14 @@ func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecuri
 		if appCfg.IncludeAccountIDInFindingID {
 			findingID = fmt.Sprintf("%s-%s-%s", AWSAccountID, check.ID, Name)
 		}
+		if appCfg.ClusterName != "" {
+			findingID = appCfg.ClusterName + "-" + findingID
+		}
+
+		productFields := map[string]string{"Product Name": "Trivy"}
+		if appCfg.ClusterName != "" {
+			productFields["ClusterName"] = appCfg.ClusterName
+		}
 
 		findings = append(findings, types.AwsSecurityFinding{
 			SchemaVersion: aws.String("2018-10-08"),
@@ -208,7 +218,7 @@ func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecuri
 					Text: aws.String(check.Remediation),
 				},
 			},
-			ProductFields: map[string]string{"Product Name": "Trivy"},
+			ProductFields: productFields,
 			Resources: []types.Resource{
 				{
 					Type:      aws.String("Other"),
@@ -304,10 +314,10 @@ func getVulnerabilityReportFindings(body []byte, appCfg Config) ([]types.AwsSecu
 	AWSAccountID := aws.ToString(callerIdentity.Account)
 	AWSRegion := cfg.Region
 
-	return buildVulnerabilityReportFindings(vulnerabilityReport, AWSAccountID, AWSRegion, appCfg.IncludeAccountIDInFindingID), nil
+	return buildVulnerabilityReportFindings(vulnerabilityReport, AWSAccountID, AWSRegion, appCfg.IncludeAccountIDInFindingID, appCfg.ClusterName), nil
 }
 
-func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.VulnerabilityReport, AWSAccountID string, AWSRegion string, includeAccountID bool) []types.AwsSecurityFinding {
+func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.VulnerabilityReport, AWSAccountID string, AWSRegion string, includeAccountID bool, clusterName string) []types.AwsSecurityFinding {
 	ProductArn := fmt.Sprintf("arn:aws:securityhub:%s::product/aquasecurity/aquasecurity", AWSRegion)
 	Namespace := vulnerabilityReport.Namespace
 	ReportName := vulnerabilityReport.Name
@@ -348,6 +358,9 @@ func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.Vulnerabilit
 		if includeAccountID {
 			rawFindingID = fmt.Sprintf("%s-%s-%s-%s", AWSAccountID, Namespace, FullImageName, vulnerabilities.VulnerabilityID)
 		}
+		if clusterName != "" {
+			rawFindingID = clusterName + "-" + rawFindingID
+		}
 		findingID := truncateWithHash(rawFindingID, 512)
 		title := truncateWithHash(fmt.Sprintf("%s/%s/%s:%s %s", Namespace, ImageName, Container, Tag, vulnerabilities.VulnerabilityID), 256)
 		resourceID := truncateWithHash(fmt.Sprintf("%s/%s", Namespace, ImageName), 512)
@@ -370,10 +383,16 @@ func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.Vulnerabilit
 					Url:  aws.String(vulnerabilities.PrimaryLink),
 				},
 			},
-			ProductFields: map[string]string{
-				"Product Name": "Trivy",
-				"Namespace":    Namespace,
-			},
+			ProductFields: func() map[string]string {
+				pf := map[string]string{
+					"Product Name": "Trivy",
+					"Namespace":    Namespace,
+				}
+				if clusterName != "" {
+					pf["ClusterName"] = clusterName
+				}
+				return pf
+			}(),
 			Resources: []types.Resource{
 				{
 					Type:      aws.String("Container"),
