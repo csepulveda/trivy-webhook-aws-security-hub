@@ -1,0 +1,44 @@
+{
+  "kind": "ConfigAuditReport",
+  "apiVersion": "aquasecurity.github.io/v1alpha1",
+  "metadata": {
+    "name": "replicaset-nginx-7c9d",
+    "namespace": "payments",
+    "ownerReferences": [
+      {
+        "apiVersion": "apps/v1",
+        "kind": "ReplicaSet",
+        "name": "nginx-7c9d",
+        "uid": "abc123"
+      }
+    ]
+  },
+  "report": {
+    "checks": [
+      {
+        "checkID": "KSV001",
+        "title": "Process can elevate its own privileges",
+        "severity": "MEDIUM",
+        "description": "A program inside the container can elevate its own privileges and run as root.",
+        "remediation": "Set allowPrivilegeEscalation to false in the container SecurityContext.",
+        "messages": ["Container 'nginx' of ReplicaSet 'nginx-7c9d' should set allowPrivilegeEscalation to false"]
+      },
+      {
+        "checkID": "KSV003",
+        "title": "Default capabilities not dropped",
+        "severity": "LOW",
+        "description": "The container should drop all default capabilities and add only those required.",
+        "remediation": "Add ALL to securityContext.capabilities.drop.",
+        "messages": ["Container 'nginx' of ReplicaSet 'nginx-7c9d' should drop all capabilities"]
+      },
+      {
+        "checkID": "KSV014",
+        "title": "Root filesystem is not read-only",
+        "severity": "HIGH",
+        "description": "An immutable root filesystem can prevent malicious binaries being added to PATH.",
+        "remediation": "Change readOnlyRootFilesystem to true.",
+        "messages": ["Container 'nginx' of ReplicaSet 'nginx-7c9d' should set readOnlyRootFilesystem to true"]
+      }
+    ]
+  }
+}

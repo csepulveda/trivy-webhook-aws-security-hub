@@ -15,7 +15,7 @@ build:
 ## Run unit tests + Docker build (required gate before pushing)
 check: test build
 
-## Run full integration tests (LocalStack mock + webhook binary)
+## Run full integration tests (mock Security Hub + webhook binary)
 integration-test:
 	./hack/integration-test.sh
 

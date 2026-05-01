@@ -1,148 +1,128 @@
 
 # Trivy Webhook AWS Security Hub
 
-This application processes vulnerability reports from **Trivy**, a vulnerability scanning tool for containers, and imports the findings into **AWS Security Hub**. It acts as a webhook receiver that listens for vulnerability reports sent by Trivy and processes them before forwarding the results to AWS Security Hub.
-
-## Features
-
-- Receives vulnerability reports via an HTTP POST request.
-- Supports importing CVE findings into **AWS Security Hub**.
-- Designed for integration with **container image scanning** and **Kubernetes environments**.
-- Selectively process different types of reports using **configurable environment variables**.
-- Logs and reports errors for easier troubleshooting.
+A webhook receiver that processes security reports from [Trivy Operator](https://github.com/aquasecurity/trivy-operator) and imports the findings into [AWS Security Hub](https://aws.amazon.com/security-hub/).
 
 ## How It Works
 
-1. **Vulnerability Report**: The application listens for incoming vulnerability reports in JSON format from Trivy via a `/trivy-webhook` endpoint.
-2. **Validation**: The incoming report is validated based on its type (e.g., `VulnerabilityReport`, `ConfigAuditReport`).
-3. **AWS Security Hub Integration**: Vulnerabilities and other security findings are imported into AWS Security Hub.
-4. **Health Check**: The `/healthz` endpoint provides a simple health check for the application.
+1. Trivy Operator scans workloads and generates reports (`VulnerabilityReport`, `ConfigAuditReport`, etc.)
+2. Trivy Operator calls this webhook's `/trivy-webhook` endpoint with the report payload
+3. The webhook maps the findings to the [AWS Security Finding Format](https://docs.aws.amazon.com/securityhub/latest/userguide/securityhub-findings-format.html) and imports them via `BatchImportFindings`
 
 ## Prerequisites
 
-- **AWS Account**: This application uses AWS Security Hub to store and manage security findings, so you must have an active AWS account and the necessary permissions.
-- **Trivy**: You must set up Trivy to scan container images and send reports to the webhook endpoint.
-- **Go**: The application is written in Go, so you'll need Go installed to build and run it.
-- **Security Hub Product Subscription**: You must accept findings from `Aqua Security: Aqua Security` in AWS Security Hub. This allows the application to import findings into Security Hub.
+- An AWS account with Security Hub enabled
+- The **Aqua Security** product integration accepted in Security Hub (`Aqua Security: Aqua Security`)
+- AWS credentials with `securityhub:BatchImportFindings` permission
+- Trivy Operator installed in your Kubernetes cluster
 
-## Setup and Installation
+## Environment Variables
 
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/csepulveda/trivy-webhook-aws-security-hub.git
-cd trivy-webhook-aws-security-hub
-```
-
-### 2. Build the application
-
-Make sure Go is installed and set up correctly:
-
-```bash
-go mod tidy
-go build -o trivy-webhook-aws-security-hub
-```
-
-### 3. Run the application
-
-Start the application locally:
-
-```bash
-./trivy-webhook-aws-security-hub
-```
-
-The server will start and listen on port `8080`.
-
-### 4. Set up Trivy to send reports
-
-Configure Trivy to send vulnerability reports to the `/trivy-webhook` endpoint of the running application.
-
-Example:
-
-```bash
-trivy image --format json --output result.json <image>
-curl -X POST -H "Content-Type: application/json" --data @result.json http://localhost:8080/trivy-webhook
-```
-
-## ⚙️ Environment Variables
-
-| Variable Name               | Description                                              | Default  |
-|----------------------------|----------------------------------------------------------|----------|
-| `INFRA_ASSESSMENT_ENABLE`   | Enable processing of InfraAssessmentReport              | `false`  |
-| `CONFIG_AUDIT_ENABLE`       | Enable processing of ConfigAuditReport                  | `false`  |
-| `CLUSTER_COMPLIANCE_ENABLE` | Enable processing of ClusterComplianceReport            | `false`  |
-| `VULNERABILITY_ENABLE`      | Enable processing of VulnerabilityReport                | `true`   |
-| `AWS_ACCESS_KEY_ID`         | AWS Access Key (standard AWS SDK var)                   | *N/A*    |
-| `AWS_SECRET_ACCESS_KEY`     | AWS Secret Key (standard AWS SDK var)                   | *N/A*    |
-| `AWS_REGION`                | AWS Region where Security Hub is enabled                | *N/A*    |
-
-Example configuration:
-
-```yaml
-env:
-  - name: INFRA_ASSESSMENT_ENABLE
-    value: "true"
-  - name: CONFIG_AUDIT_ENABLE
-    value: "true"
-  - name: CLUSTER_COMPLIANCE_ENABLE
-    value: "true"
-  - name: VULNERABILITY_ENABLE
-    value: "true"
-```
+| Variable | Description | Default |
+|---|---|---|
+| `VULNERABILITY_ENABLE` | Process `VulnerabilityReport` | `true` |
+| `CONFIG_AUDIT_ENABLE` | Process `ConfigAuditReport` | `true` |
+| `INFRA_ASSESSMENT_ENABLE` | Process `InfraAssessmentReport` | `true` |
+| `CLUSTER_COMPLIANCE_ENABLE` | Process `ClusterComplianceReport` | `true` |
+| `INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS Account ID — useful in multi-account Security Hub organizations where the same CVE can appear across member accounts | `false` |
+| `AWS_REGION` | AWS region where Security Hub is enabled | — |
+| `AWS_ACCESS_KEY_ID` | AWS access key (standard SDK env var) | — |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key (standard SDK env var) | — |
 
 ## API Endpoints
 
-| Method | Path             | Description                                      |
-|-------|------------------|--------------------------------------------------|
-| POST  | `/trivy-webhook`  | Receives vulnerability or security reports and imports them to AWS Security Hub. |
-| GET   | `/healthz`        | Health check endpoint that returns `OK`.        |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/trivy-webhook` | Receives Trivy Operator report payloads |
+| `GET` | `/healthz` | Health check — returns `OK` |
 
-## Example Vulnerability Report (from Trivy)
-
-```json
-{
-  "kind": "VulnerabilityReport",
-  "metadata": {
-    "name": "example",
-    "labels": {
-      "trivy-operator.container.name": "example-container"
-    }
-  },
-  "report": {
-    "registry": {
-      "server": "docker.io"
-    },
-    "artifact": {
-      "repository": "library/nginx",
-      "digest": "sha256:exampledigest"
-    },
-    "vulnerabilities": [
-      {
-        "vulnerabilityID": "CVE-2021-12345",
-        "title": "Example Vulnerability",
-        "severity": "HIGH",
-        "resource": "nginx",
-        "installedVersion": "1.18.0",
-        "fixedVersion": "1.19.0",
-        "primaryLink": "https://example.com/CVE-2021-12345"
-      }
-    ]
-  }
-}
-```
-
-## 📦 Helm Chart
-
-To deploy this application on Kubernetes, a Helm chart is included in the `charts/` directory.
+## Deploy with Helm
 
 ```bash
-helm install trivy-webhook charts/trivy-webhook-aws-security-hub
+helm install trivy-webhook oci://ghcr.io/csepulveda/charts/trivy-webhook-aws-security-hub \
+  --set config.AWS_REGION=eu-central-1 \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::123456789012:role/trivy-webhook
 ```
 
-## 🚀 Contributing
+Full values reference: [`charts/trivy-webhook-aws-security-hub/values.yaml`](charts/trivy-webhook-aws-security-hub/values.yaml)
 
-We welcome contributions! Please follow the standard GitHub workflow: Fork, branch, commit, push, and open a pull request.
+## Development
 
-## 📜 License
+### Requirements
 
-Licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
+| Tool | Version | Purpose |
+|---|---|---|
+| Go | ≥ 1.26 | Build and tests |
+| Docker | any | Image build and E2E |
+| Minikube | any | E2E tests only |
+| Helm | ≥ 3 | E2E tests only |
+
+### Testing pipeline
+
+Before opening a PR, run the full local gate:
+
+```bash
+make check             # unit tests + docker build (required)
+make integration-test  # end-to-end with mock Security Hub
+make e2e-test          # full E2E in Minikube
+```
+
+The same tests run automatically in GitHub Actions on every PR.
+
+#### Unit tests
+
+Pure Go tests, no external dependencies:
+
+```bash
+go test ./... -count=1
+```
+
+#### Integration tests
+
+Tests the full request lifecycle: webhook binary → mock Security Hub. No AWS account or external services needed.
+
+```bash
+./hack/integration-test.sh
+```
+
+The script starts a mock Security Hub server (`tests/mock-security-hub/`) that implements the real STS and Security Hub HTTP APIs, then runs Go tests that POST sample `VulnerabilityReport` and `ConfigAuditReport` payloads and assert the findings arrived correctly.
+
+#### E2E tests in Minikube
+
+Full end-to-end inside a real Kubernetes cluster:
+
+```bash
+minikube start --cpus=2 --memory=4096   # skip if already running
+./hack/minikube-e2e.sh
+```
+
+The script:
+1. Verifies Minikube is running (exits with instructions if not)
+2. Builds both images into Minikube's Docker daemon
+3. Deploys the webhook via Helm and the mock Security Hub as a Pod
+4. Installs Trivy Operator CRDs and creates sample `VulnerabilityReport` / `ConfigAuditReport` objects
+5. Reads those CRDs from the cluster and sends them to the webhook (simulating Trivy Operator's webhook call)
+6. Verifies all expected findings (3 CVEs + 3 config checks) appear in the mock
+7. Cleans up everything: CRDs, Pods, namespace
+
+### Mock Security Hub
+
+`tests/mock-security-hub/` is a standalone Go HTTP server that implements:
+
+| Endpoint | Description |
+|---|---|
+| `POST /` | STS `GetCallerIdentity` — returns a fixed account ID |
+| `POST /findings/import` | Security Hub `BatchImportFindings` — stores findings in memory |
+| `GET /mock/findings` | Returns all captured findings (test helper) |
+| `DELETE /mock/findings` | Clears findings between tests |
+| `GET /healthz` | Health check |
+
+Configure via env vars: `MOCK_PORT` (default `4566`), `MOCK_ACCOUNT_ID`, `MOCK_REGION`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow, coding guidelines, and release process.
+
+## License
+
+Licensed under the [GNU General Public License v3.0](LICENSE).
