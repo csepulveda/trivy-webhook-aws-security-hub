@@ -2,6 +2,19 @@ apiVersion: v1
 entries:
   trivy-webhook-aws-security-hub:
   - apiVersion: v2
+    appVersion: v0.1.19
+    created: "2026-05-01T20:05:46.892238663Z"
+    description: A Helm chart for Kubernetes
+    digest: 27b2fba1000b33b56971a51b4f23639d72e1e68f131d8ea58c12d438da064785
+    home: https://github.com/csepulveda/trivy-webhook-aws-security-hub
+    name: trivy-webhook-aws-security-hub
+    sources:
+    - https://github.com/csepulveda/trivy-webhook-aws-security-hub/tree/main/charts/trivy-webhook-aws-security-hub
+    type: application
+    urls:
+    - https://github.com/csepulveda/trivy-webhook-aws-security-hub/releases/download/trivy-webhook-aws-security-hub-0.1.19/trivy-webhook-aws-security-hub-0.1.19.tgz
+    version: 0.1.19
+  - apiVersion: v2
     appVersion: v0.1.18
     created: "2026-05-01T17:59:50.963284854Z"
     description: A Helm chart for Kubernetes
@@ -201,4 +214,4 @@ entries:
     urls:
     - https://github.com/csepulveda/trivy-webhook-aws-security-hub/releases/download/trivy-webhook-aws-security-hub-0.1.0/trivy-webhook-aws-security-hub-0.1.0.tgz
     version: 0.1.0
-generated: "2026-05-01T17:59:50.963464308Z"
+generated: "2026-05-01T20:05:46.89238448Z"
