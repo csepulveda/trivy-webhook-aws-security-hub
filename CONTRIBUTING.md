@@ -89,8 +89,8 @@ Releases are fully automated by GitHub Actions. To cut a release:
 1. Ensure all changes are merged to `main` and CI is green.
 2. Create and push a semver tag:
    ```bash
-   git tag v0.1.18
-   git push origin v0.1.18
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
    ```
 3. The `release.yml` workflow triggers automatically and:
    - Builds and pushes the Docker image to `ghcr.io/csepulveda/trivy-webhook-aws-security-hub:<tag>`

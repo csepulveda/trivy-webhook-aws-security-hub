@@ -44,6 +44,7 @@ Replace `trivy-webhook.default` with `<release-name>.<namespace>` matching your 
 | `config.CONFIG_AUDIT_ENABLE` | Process `ConfigAuditReport` | `"false"` |
 | `config.INFRA_ASSESSMENT_ENABLE` | Process `InfraAssessmentReport` | `"false"` |
 | `config.CLUSTER_COMPLIANCE_ENABLE` | Process `ClusterComplianceReport` | `"false"` |
+| `config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS account ID — useful in multi-account Security Hub organizations where the same CVE can appear across member accounts | `"false"` |
 
 ### Extra environment variables
 
@@ -58,11 +59,7 @@ extraenvs:
       secretKeyRef:
         name: aws-credentials
         key: secret-access-key
-  - name: INCLUDE_ACCOUNT_ID_IN_FINDING_ID
-    value: "true"
 ```
-
-`INCLUDE_ACCOUNT_ID_IN_FINDING_ID` prefixes finding IDs with the AWS account ID — useful in multi-account Security Hub organizations where the same CVE can appear across member accounts.
 
 ### Common parameters
 
