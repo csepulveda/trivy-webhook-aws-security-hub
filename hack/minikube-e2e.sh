@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # E2E test in Minikube:
 #
-#   1. Verifica que Minikube esté corriendo
-#   2. Construye las imágenes y despliega el servicio + mock en Minikube
-#   3. Instala los CRDs de trivy-operator y crea objetos VulnerabilityReport
-#      y ConfigAuditReport de ejemplo en el cluster
-#   4. Lee los CRDs desde el cluster y los envía al webhook (simulando
-#      lo que haría trivy-operator al llamar el webhook)
-#   5. Valida que el mock Security Hub recibió todos los findings esperados
-#   6. Limpia todo: CRDs, mock, webhook, namespace
+#   1. Verify Minikube is running
+#   2. Build images and deploy the service + mock in Minikube
+#   3. Install trivy-operator CRDs and create sample VulnerabilityReport
+#      and ConfigAuditReport objects in the cluster
+#   4. Read the CRDs from the cluster and send them to the webhook (simulating
+#      what trivy-operator would do when calling the webhook)
+#   5. Validate that mock Security Hub received all expected findings
+#   6. Clean up everything: CRDs, mock, webhook, namespace
 #
-# Uso:
-#   ./hack/minikube-e2e.sh           # correr el test completo
-#   ./hack/minikube-e2e.sh --cleanup # limpiar sin correr tests
+# Usage:
+#   ./hack/minikube-e2e.sh           # run the full test
+#   ./hack/minikube-e2e.sh --cleanup # clean up without running tests
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,52 +20,52 @@ NAMESPACE="trivy-e2e"
 RELEASE="trivy-webhook"
 WEBHOOK_IMAGE="trivy-webhook-aws-security-hub:e2e"
 MOCK_IMAGE="trivy-mock-security-hub:e2e"
-MOCK_SVC_URL="http://mock-security-hub:4566"   # URL interna al cluster
+MOCK_SVC_URL="http://mock-security-hub:4566"   # cluster-internal URL
 
-# ── 1. VERIFICAR MINIKUBE ─────────────────────────────────────────────────────
+# ── 1. VERIFY MINIKUBE ────────────────────────────────────────────────────────
 if ! minikube status 2>/dev/null | grep -q "Running"; then
   echo ""
-  echo "ERROR: Minikube no está corriendo."
+  echo "ERROR: Minikube is not running."
   echo ""
-  echo "  Inícialo con:  minikube start --cpus=2 --memory=4096"
-  echo "  Luego ejecuta: ./hack/minikube-e2e.sh"
+  echo "  Start it with:  minikube start --cpus=2 --memory=4096"
+  echo "  Then run:       ./hack/minikube-e2e.sh"
   echo ""
   exit 1
 fi
 
-# Fuerza kubectl y helm a usar SOLO el contexto de Minikube.
-# Esto evita deployar accidentalmente en clusters reales (staging/prod).
+# Force kubectl and helm to use ONLY the Minikube context.
+# This prevents accidentally deploying to real clusters (staging/prod).
 KUBECONFIG="$(mktemp)"
 export KUBECONFIG
 minikube update-context
-echo "Contexto activo: $(kubectl config current-context)"
+echo "Active context: $(kubectl config current-context)"
 
-# ── Funciones de utilidad ──────────────────────────────────────────────────────
+# ── Utility functions ──────────────────────────────────────────────────────────
 
 wait_for_url() {
   local url=$1 label=$2 timeout=${3:-30}
-  echo -n "  Esperando $label..."
+  echo -n "  Waiting for $label..."
   for i in $(seq 1 "$timeout"); do
     if curl -sf "$url" > /dev/null 2>&1; then
-      echo " listo."
+      echo " ready."
       return 0
     fi
     sleep 1
     echo -n "."
   done
   echo ""
-  echo "ERROR: $label no respondió en $timeout segundos ($url)"
+  echo "ERROR: $label did not respond within $timeout seconds ($url)"
   return 1
 }
 
 cleanup() {
   echo ""
-  echo "=== [6/5] Limpieza ==="
+  echo "=== [6/5] Cleanup ==="
   kill "$WH_PF" "$MOCK_PF" 2>/dev/null || true
   helm uninstall "$RELEASE" -n "$NAMESPACE" 2>/dev/null || true
   kubectl delete ns "$NAMESPACE" --ignore-not-found 2>/dev/null || true
   rm -f "$KUBECONFIG"
-  echo "Limpieza completa."
+  echo "Cleanup complete."
 }
 
 if [[ "${1:-}" == "--cleanup" ]]; then
@@ -74,18 +74,18 @@ if [[ "${1:-}" == "--cleanup" ]]; then
 fi
 trap cleanup EXIT
 
-# Apunta Docker al daemon de Minikube para que las imágenes queden dentro del cluster
+# Point Docker to Minikube's daemon so images are available inside the cluster
 eval "$(minikube docker-env)"
 
-# ── 2. BUILD Y DEPLOY ─────────────────────────────────────────────────────────
+# ── 2. BUILD AND DEPLOY ───────────────────────────────────────────────────────
 
 echo ""
-echo "=== [2/5] Build de imágenes ==="
+echo "=== [2/5] Building images ==="
 
-echo "  Construyendo webhook..."
+echo "  Building webhook..."
 docker build -t "$WEBHOOK_IMAGE" "$ROOT" -q
 
-echo "  Construyendo mock Security Hub..."
+echo "  Building mock Security Hub..."
 docker build -t "$MOCK_IMAGE" -f - "$ROOT" -q <<'DOCKERFILE'
 FROM golang:1.26-alpine3.22 AS builder
 WORKDIR /app
@@ -98,10 +98,10 @@ EXPOSE 4566
 ENTRYPOINT ["./mock-server"]
 DOCKERFILE
 
-echo "  Imágenes OK."
+echo "  Images built."
 
 echo ""
-echo "=== [2/5] Deploy en Minikube ==="
+echo "=== [2/5] Deploying in Minikube ==="
 
 kubectl create ns "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
@@ -158,7 +158,7 @@ EOF
 kubectl wait --for=condition=ready pod -l app=mock-security-hub \
   -n "$NAMESPACE" --timeout=60s
 
-# Deploy webhook via Helm apuntando al mock
+# Deploy webhook via Helm pointing to the mock
 helm upgrade --install "$RELEASE" "$ROOT/charts/trivy-webhook-aws-security-hub" \
   --namespace "$NAMESPACE" \
   --set image.repository="${WEBHOOK_IMAGE%:*}" \
@@ -177,7 +177,7 @@ helm upgrade --install "$RELEASE" "$ROOT/charts/trivy-webhook-aws-security-hub" 
 
 echo "  Deploy OK."
 
-# Port-forwards al localhost para que el test pueda acceder
+# Port-forward to localhost so the test can access both services
 WEBHOOK_SVC=$(kubectl get svc -n "$NAMESPACE" \
   -l "app.kubernetes.io/instance=$RELEASE" \
   -o jsonpath='{.items[0].metadata.name}')
@@ -190,14 +190,14 @@ MOCK_PF=$!
 wait_for_url "http://localhost:8080/healthz" "webhook" 30
 wait_for_url "http://localhost:4566/healthz"  "mock Security Hub" 30
 
-# ── 3. CREAR CRDs EN EL CLUSTER ───────────────────────────────────────────────
+# ── 3. CREATE CRDs IN THE CLUSTER ─────────────────────────────────────────────
 
 echo ""
-echo "=== [3/5] Instalando CRDs de trivy-operator y creando objetos de ejemplo ==="
+echo "=== [3/5] Installing trivy-operator CRDs and creating sample objects ==="
 
-# CRDs mínimos incluidos inline: sin dependencia de red, funciona offline.
-# Solo definen el grupo/versión/kind necesarios para que kubectl acepte
-# los objetos — sin validation schema completo para simplificar el test.
+# Minimal CRDs defined inline: no network dependency, works offline.
+# They only define the group/version/kind needed for kubectl to accept
+# the objects — no full validation schema to keep the test simple.
 kubectl apply -f - <<'EOF'
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -240,10 +240,9 @@ spec:
     kind: ConfigAuditReport
 EOF
 
-echo "  CRDs instalados."
+echo "  CRDs installed."
 
-# Crea objetos VulnerabilityReport en el cluster usando los fixtures
-# (convertimos el JSON del fixture a un objeto Kubernetes aplicable)
+# Create VulnerabilityReport objects in the cluster using sample data
 kubectl apply -n "$NAMESPACE" -f - <<'EOF'
 apiVersion: aquasecurity.github.io/v1alpha1
 kind: VulnerabilityReport
@@ -344,44 +343,44 @@ report:
   updateTimestamp: "2026-01-01T00:00:00Z"
 EOF
 
-echo "  CRDs creados en Minikube:"
+echo "  CRDs created in Minikube:"
 kubectl get vulnerabilityreports,configauditreports -n "$NAMESPACE"
 
-# ── 4. ENVIAR CRDs AL WEBHOOK ─────────────────────────────────────────────────
+# ── 4. SEND CRDs TO THE WEBHOOK ───────────────────────────────────────────────
 
 echo ""
-echo "=== [4/5] Leyendo CRDs del cluster y enviando al webhook ==="
-echo "  (simula la llamada que haría trivy-operator al webhook)"
+echo "=== [4/5] Reading CRDs from cluster and sending to webhook ==="
+echo "  (simulates the call that trivy-operator would make to the webhook)"
 
-# Lee el VulnerabilityReport desde el cluster como JSON y lo envía
-echo "  → VulnerabilityReport (3 CVEs)..."
+# Read the VulnerabilityReport from the cluster as JSON and send it
+echo "  -> VulnerabilityReport (3 CVEs)..."
 kubectl get vulnerabilityreport replicaset-nginx-7c9d \
   -n "$NAMESPACE" -o json | \
   curl -sf -X POST http://localhost:8080/trivy-webhook \
     -H "Content-Type: application/json" \
     -d @-
-echo " enviado."
+echo " sent."
 
-# Lee el ConfigAuditReport desde el cluster como JSON y lo envía
-echo "  → ConfigAuditReport (3 checks)..."
+# Read the ConfigAuditReport from the cluster as JSON and send it
+echo "  -> ConfigAuditReport (3 checks)..."
 kubectl get configauditreport replicaset-nginx-7c9d \
   -n "$NAMESPACE" -o json | \
   curl -sf -X POST http://localhost:8080/trivy-webhook \
     -H "Content-Type: application/json" \
     -d @-
-echo " enviado."
+echo " sent."
 
 sleep 2
 
-# ── 5. VALIDAR FINDINGS EN EL MOCK ────────────────────────────────────────────
+# ── 5. VALIDATE FINDINGS IN THE MOCK ──────────────────────────────────────────
 
 echo ""
-echo "=== [5/5] Validando findings en mock Security Hub ==="
+echo "=== [5/5] Validating findings in mock Security Hub ==="
 
 FINDINGS_JSON=$(curl -sf http://localhost:4566/mock/findings)
 COUNT=$(echo "$FINDINGS_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 
-echo "  Findings recibidos: $COUNT"
+echo "  Findings received: $COUNT"
 echo ""
 echo "$FINDINGS_JSON" | python3 -c "
 import sys, json
@@ -395,26 +394,26 @@ echo ""
 
 EXPECTED=6  # 3 CVEs + 3 config checks
 if [[ "$COUNT" -lt "$EXPECTED" ]]; then
-  echo "FALLO: se esperaban al menos $EXPECTED findings, se recibieron $COUNT"
+  echo "FAIL: expected at least $EXPECTED findings, got $COUNT"
   exit 1
 fi
 
-# Verifica que los CVEs esperados están presentes
+# Verify expected CVEs are present
 for cve in CVE-2023-44487 CVE-2023-5678 CVE-2024-0001; do
   if ! echo "$FINDINGS_JSON" | grep -q "$cve"; then
-    echo "FALLO: no se encontró $cve en los findings"
+    echo "FAIL: $cve not found in findings"
     exit 1
   fi
-  echo "  ✓ $cve presente"
+  echo "  ✓ $cve present"
 done
 
 for check in KSV001 KSV003 KSV014; do
   if ! echo "$FINDINGS_JSON" | grep -q "$check"; then
-    echo "FALLO: no se encontró $check en los findings"
+    echo "FAIL: $check not found in findings"
     exit 1
   fi
-  echo "  ✓ $check presente"
+  echo "  ✓ $check present"
 done
 
 echo ""
-echo "E2E test exitoso: $COUNT/$EXPECTED findings verificados end-to-end en Minikube."
+echo "E2E test passed: $COUNT/$EXPECTED findings verified end-to-end in Minikube."
