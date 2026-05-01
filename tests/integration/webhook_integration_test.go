@@ -1,3 +1,8 @@
+// Integration tests for the trivy-webhook-aws-security-hub service.
+//
+// Requires:  INTEGRATION=true
+// Setup:     hack/integration-test.sh handles starting the mock and webhook.
+// Manually:  go test ./tests/integration/... -v -count=1 (with services running)
 package integration_test
 
 import (
@@ -7,7 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,15 +21,9 @@ import (
 )
 
 const (
-	webhookURL   = "http://localhost:8080/trivy-webhook"
-	localstackURL = "http://localhost:4566"
+	webhookBase = "http://localhost:8080"
+	mockBase    = "http://localhost:4566"
 )
-
-// finding represents a minimal Security Hub finding for assertion.
-type finding struct {
-	Id    string `json:"Id"`
-	Title string `json:"Title"`
-}
 
 func TestMain(m *testing.M) {
 	if os.Getenv("INTEGRATION") != "true" {
@@ -32,136 +31,175 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	if err := waitForService(localstackURL+"/_localstack/health", 30*time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "LocalStack not ready: %v\n", err)
-		os.Exit(1)
+	require := func(service, url string) {
+		if err := waitForService(url, 30*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "%s not ready at %s: %v\n", service, url, err)
+			os.Exit(1)
+		}
 	}
 
-	if err := setupLocalStack(); err != nil {
-		fmt.Fprintf(os.Stderr, "LocalStack setup failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := waitForService(webhookURL[:len(webhookURL)-len("/trivy-webhook")]+"/healthz", 15*time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "Webhook not ready: %v\n", err)
-		os.Exit(1)
-	}
+	require("mock-security-hub", mockBase+"/healthz")
+	require("webhook", webhookBase+"/healthz")
 
 	os.Exit(m.Run())
 }
 
-func setupLocalStack() error {
-	// Enable Security Hub in LocalStack
-	cmd := exec.Command("aws", "--endpoint-url", localstackURL,
-		"securityhub", "enable-security-hub",
-		"--region", "eu-central-1")
-	cmd.Env = append(os.Environ(),
-		"AWS_ACCESS_KEY_ID=test",
-		"AWS_SECRET_ACCESS_KEY=test",
-		"AWS_DEFAULT_REGION=eu-central-1",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// Already enabled is fine
-		if bytes.Contains(out, []byte("already")) || bytes.Contains(out, []byte("EnableSecurityHub")) {
-			return nil
-		}
-		return fmt.Errorf("enable-security-hub: %v — %s", err, out)
-	}
-	return nil
-}
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-func TestVulnerabilityReportImported(t *testing.T) {
-	body, err := os.ReadFile("fixtures/vulnerability-report.json")
-	require.NoError(t, err)
-
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewReader(body))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "webhook response: %s", respBody)
-
-	findings := listFindings(t)
-	require.NotEmpty(t, findings, "expected findings in Security Hub after VulnerabilityReport")
-
-	ids := make([]string, len(findings))
-	for i, f := range findings {
-		ids[i] = f.Id
-	}
-
-	assert.Contains(t, fmt.Sprint(ids), "CVE-2023-44487", "HIGH CVE finding expected")
-	assert.Contains(t, fmt.Sprint(ids), "CVE-2023-5678", "MEDIUM CVE finding expected")
-	assert.Contains(t, fmt.Sprint(ids), "CVE-2024-0001", "LOW CVE finding expected")
-}
-
-func TestConfigAuditReportImported(t *testing.T) {
-	body, err := os.ReadFile("fixtures/config-audit-report.json")
-	require.NoError(t, err)
-
-	// Enable config audit via env (webhook must be started with CONFIG_AUDIT_ENABLE=true)
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewReader(body))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "webhook response: %s", respBody)
-}
-
-func TestHealthEndpoint(t *testing.T) {
-	resp, err := http.Get(webhookURL[:len(webhookURL)-len("/trivy-webhook")] + "/healthz")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-}
-
-func TestUnknownReportTypeRejected(t *testing.T) {
-	payload := []byte(`{"kind":"UnknownReport","apiVersion":"aquasecurity.github.io/v1alpha1"}`)
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewReader(payload))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-func TestEmptyBodyRejected(t *testing.T) {
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewReader([]byte{}))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-// listFindings queries LocalStack Security Hub for imported findings.
-func listFindings(t *testing.T) []finding {
+func postWebhook(t *testing.T, fixturePath string) *http.Response {
 	t.Helper()
+	body, err := os.ReadFile(fixturePath)
+	require.NoError(t, err)
+	resp, err := http.Post(webhookBase+"/trivy-webhook", "application/json", bytes.NewReader(body))
+	require.NoError(t, err)
+	return resp
+}
 
-	cmd := exec.Command("aws", "--endpoint-url", localstackURL,
-		"securityhub", "get-findings",
-		"--region", "eu-central-1",
-		"--output", "json")
-	cmd.Env = append(os.Environ(),
-		"AWS_ACCESS_KEY_ID=test",
-		"AWS_SECRET_ACCESS_KEY=test",
-		"AWS_DEFAULT_REGION=eu-central-1",
-	)
-	out, err := cmd.Output()
-	require.NoError(t, err, "get-findings failed")
+func capturedFindings(t *testing.T) []map[string]interface{} {
+	t.Helper()
+	resp, err := http.Get(mockBase + "/mock/findings")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	var findings []map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&findings))
+	return findings
+}
 
-	var result struct {
-		Findings []finding `json:"Findings"`
+func clearFindings(t *testing.T) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodDelete, mockBase+"/mock/findings", nil)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+}
+
+func findingIDs(findings []map[string]interface{}) []string {
+	ids := make([]string, 0, len(findings))
+	for _, f := range findings {
+		if id, ok := f["Id"].(string); ok {
+			ids = append(ids, id)
+		}
 	}
-	require.NoError(t, json.Unmarshal(out, &result))
-	return result.Findings
+	return ids
 }
 
 func waitForService(url string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(url)
-		if err == nil && resp.StatusCode < 500 {
+		if err == nil {
 			resp.Body.Close()
-			return nil
+			if resp.StatusCode < 500 {
+				return nil
+			}
 		}
 		time.Sleep(time.Second)
 	}
-	return fmt.Errorf("service at %s not ready after %s", url, timeout)
+	return fmt.Errorf("timeout after %s", timeout)
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+func TestHealthEndpoint(t *testing.T) {
+	resp, err := http.Get(webhookBase + "/healthz")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestVulnerabilityReport_ThreeCVEsImported(t *testing.T) {
+	clearFindings(t)
+
+	resp := postWebhook(t, "fixtures/vulnerability-report.json")
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "response: %s", body)
+
+	findings := capturedFindings(t)
+	require.Len(t, findings, 3, "expected 3 findings for 3 CVEs in the fixture")
+
+	ids := strings.Join(findingIDs(findings), " ")
+	assert.Contains(t, ids, "CVE-2023-44487", "HIGH CVE should be imported")
+	assert.Contains(t, ids, "CVE-2023-5678", "MEDIUM CVE should be imported")
+	assert.Contains(t, ids, "CVE-2024-0001", "LOW CVE should be imported")
+}
+
+func TestVulnerabilityReport_NamespaceInFindingID(t *testing.T) {
+	clearFindings(t)
+
+	resp := postWebhook(t, "fixtures/vulnerability-report.json")
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	findings := capturedFindings(t)
+	require.NotEmpty(t, findings)
+
+	// Fixture namespace is "payments"
+	for _, f := range findings {
+		id := f["Id"].(string)
+		assert.Contains(t, id, "payments", "namespace should be in finding ID, got: %s", id)
+	}
+}
+
+func TestVulnerabilityReport_SeveritiesPreserved(t *testing.T) {
+	clearFindings(t)
+	postWebhook(t, "fixtures/vulnerability-report.json")
+
+	severities := map[string]string{}
+	for _, f := range capturedFindings(t) {
+		id := f["Id"].(string)
+		if sev, ok := f["Severity"].(map[string]interface{}); ok {
+			severities[id] = sev["Label"].(string)
+		}
+	}
+
+	for id, label := range severities {
+		switch {
+		case strings.Contains(id, "CVE-2023-44487"):
+			assert.Equal(t, "HIGH", label)
+		case strings.Contains(id, "CVE-2023-5678"):
+			assert.Equal(t, "MEDIUM", label)
+		case strings.Contains(id, "CVE-2024-0001"):
+			assert.Equal(t, "LOW", label)
+		}
+	}
+}
+
+func TestConfigAuditReport_ThreeChecksImported(t *testing.T) {
+	clearFindings(t)
+
+	resp := postWebhook(t, "fixtures/config-audit-report.json")
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "response: %s", body)
+
+	findings := capturedFindings(t)
+	assert.Len(t, findings, 3, "expected 3 findings for 3 config audit checks")
+
+	ids := strings.Join(findingIDs(findings), " ")
+	assert.Contains(t, ids, "KSV001")
+	assert.Contains(t, ids, "KSV003")
+	assert.Contains(t, ids, "KSV014")
+}
+
+func TestUnknownReportTypeRejected(t *testing.T) {
+	payload := []byte(`{"kind":"UnknownReport","apiVersion":"aquasecurity.github.io/v1alpha1"}`)
+	resp, err := http.Post(webhookBase+"/trivy-webhook", "application/json", bytes.NewReader(payload))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestEmptyBodyRejected(t *testing.T) {
+	resp, err := http.Post(webhookBase+"/trivy-webhook", "application/json", bytes.NewReader([]byte{}))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestInvalidJSONRejected(t *testing.T) {
+	resp, err := http.Post(webhookBase+"/trivy-webhook", "application/json", bytes.NewReader([]byte(`{not json`)))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }

@@ -27,4 +27,9 @@ go.work.sum
 #Vscode
 .vscode
 __debug_*
+
+# Ignore generated/downloaded JSON (e.g. chart-releaser artifacts)
 *.json
+
+# But keep intentional JSON files checked in
+!tests/integration/fixtures/*.json
