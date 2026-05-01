@@ -28,19 +28,21 @@ type webhook struct {
 
 // Config holds feature flags
 type Config struct {
-	InfraAssessmentEnable   bool
-	ConfigAuditEnable       bool
-	ClusterComplianceEnable bool
-	VulnerabilityEnable     bool
+	InfraAssessmentEnable       bool
+	ConfigAuditEnable           bool
+	ClusterComplianceEnable     bool
+	VulnerabilityEnable         bool
+	IncludeAccountIDInFindingID bool
 }
 
 // LoadConfig reads feature flags from environment variables.
 func LoadConfig() Config {
 	return Config{
-		InfraAssessmentEnable:   tools.ParseEnvBool("INFRA_ASSESSMENT_ENABLE", true),
-		ConfigAuditEnable:       tools.ParseEnvBool("CONFIG_AUDIT_ENABLE", true),
-		ClusterComplianceEnable: tools.ParseEnvBool("CLUSTER_COMPLIANCE_ENABLE", true),
-		VulnerabilityEnable:     tools.ParseEnvBool("VULNERABILITY_ENABLE", true),
+		InfraAssessmentEnable:       tools.ParseEnvBool("INFRA_ASSESSMENT_ENABLE", true),
+		ConfigAuditEnable:           tools.ParseEnvBool("CONFIG_AUDIT_ENABLE", true),
+		ClusterComplianceEnable:     tools.ParseEnvBool("CLUSTER_COMPLIANCE_ENABLE", true),
+		VulnerabilityEnable:         tools.ParseEnvBool("VULNERABILITY_ENABLE", true),
+		IncludeAccountIDInFindingID: tools.ParseEnvBool("INCLUDE_ACCOUNT_ID_IN_FINDING_ID", false),
 	}
 }
 
@@ -81,7 +83,7 @@ func ProcessTrivyWebhook(cfg Config) http.HandlerFunc {
 		switch report.Kind {
 		case "ConfigAuditReport":
 			if cfg.ConfigAuditEnable {
-				findings, err = getConfigAuditReportFindings(body)
+				findings, err = getConfigAuditReportFindings(body, cfg)
 				if err != nil {
 					http.Error(w, "Error processing report", http.StatusInternalServerError)
 					log.Printf("Error processing report: %v", err)
@@ -90,7 +92,7 @@ func ProcessTrivyWebhook(cfg Config) http.HandlerFunc {
 			}
 		case "InfraAssessmentReport":
 			if cfg.InfraAssessmentEnable {
-				findings, err = getInfraAssessmentReport(body)
+				findings, err = getInfraAssessmentReport(body, cfg)
 				if err != nil {
 					http.Error(w, "Error processing report", http.StatusInternalServerError)
 					log.Printf("Error processing report: %v", err)
@@ -99,7 +101,7 @@ func ProcessTrivyWebhook(cfg Config) http.HandlerFunc {
 			}
 		case "ClusterComplianceReport":
 			if cfg.ClusterComplianceEnable {
-				findings, err = getClusterComplianceReport(body)
+				findings, err = getClusterComplianceReport(body, cfg)
 				if err != nil {
 					http.Error(w, "Error processing report", http.StatusInternalServerError)
 					log.Printf("Error processing report: %v", err)
@@ -108,7 +110,7 @@ func ProcessTrivyWebhook(cfg Config) http.HandlerFunc {
 			}
 		case "VulnerabilityReport":
 			if cfg.VulnerabilityEnable {
-				findings, err = getVulnerabilityReportFindings(body)
+				findings, err = getVulnerabilityReportFindings(body, cfg)
 				if err != nil {
 					http.Error(w, "Error processing report", http.StatusInternalServerError)
 					log.Printf("Error processing report: %v", err)
@@ -139,7 +141,7 @@ func ProcessTrivyWebhook(cfg Config) http.HandlerFunc {
 	}
 }
 
-func getConfigAuditReportFindings(body []byte) ([]types.AwsSecurityFinding, error) {
+func getConfigAuditReportFindings(body []byte, appCfg Config) ([]types.AwsSecurityFinding, error) {
 	configAuditReport := &v1alpha1.ConfigAuditReport{}
 
 	// Decode JSON
@@ -184,9 +186,14 @@ func getConfigAuditReportFindings(body []byte) ([]types.AwsSecurityFinding, erro
 			description = description[:1021] + "..."
 		}
 
+		findingID := fmt.Sprintf("%s-%s", check.ID, Name)
+		if appCfg.IncludeAccountIDInFindingID {
+			findingID = fmt.Sprintf("%s-%s-%s", AWSAccountID, check.ID, Name)
+		}
+
 		findings = append(findings, types.AwsSecurityFinding{
 			SchemaVersion: aws.String("2018-10-08"),
-			Id:            aws.String(fmt.Sprintf("%s-%s", check.ID, Name)),
+			Id:            aws.String(findingID),
 			ProductArn:    aws.String(ProductArn),
 			GeneratorId:   aws.String(fmt.Sprintf("Trivy/%s", check.ID)),
 			AwsAccountId:  aws.String(AWSAccountID),
@@ -222,7 +229,7 @@ func getConfigAuditReportFindings(body []byte) ([]types.AwsSecurityFinding, erro
 	return findings, nil
 }
 
-func getInfraAssessmentReport(body []byte) ([]types.AwsSecurityFinding, error) {
+func getInfraAssessmentReport(body []byte, appCfg Config) ([]types.AwsSecurityFinding, error) {
 	infraAssessmentReport := &v1alpha1.InfraAssessmentReport{}
 
 	// Decode JSON
@@ -246,7 +253,7 @@ func getInfraAssessmentReport(body []byte) ([]types.AwsSecurityFinding, error) {
 	return findings, nil
 }
 
-func getClusterComplianceReport(body []byte) ([]types.AwsSecurityFinding, error) {
+func getClusterComplianceReport(body []byte, appCfg Config) ([]types.AwsSecurityFinding, error) {
 	clusterComplianceReport := &v1alpha1.ClusterComplianceReport{}
 
 	// Decode JSON
@@ -270,7 +277,7 @@ func getClusterComplianceReport(body []byte) ([]types.AwsSecurityFinding, error)
 	return findings, nil
 }
 
-func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, error) {
+func getVulnerabilityReportFindings(body []byte, appCfg Config) ([]types.AwsSecurityFinding, error) {
 	vulnerabilityReport := &v1alpha1.VulnerabilityReport{}
 
 	// Decode JSON
@@ -297,10 +304,10 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 	AWSAccountID := aws.ToString(callerIdentity.Account)
 	AWSRegion := cfg.Region
 
-	return buildVulnerabilityReportFindings(vulnerabilityReport, AWSAccountID, AWSRegion), nil
+	return buildVulnerabilityReportFindings(vulnerabilityReport, AWSAccountID, AWSRegion, appCfg.IncludeAccountIDInFindingID), nil
 }
 
-func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.VulnerabilityReport, AWSAccountID string, AWSRegion string) []types.AwsSecurityFinding {
+func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.VulnerabilityReport, AWSAccountID string, AWSRegion string, includeAccountID bool) []types.AwsSecurityFinding {
 	ProductArn := fmt.Sprintf("arn:aws:securityhub:%s::product/aquasecurity/aquasecurity", AWSRegion)
 	Namespace := vulnerabilityReport.Namespace
 	ReportName := vulnerabilityReport.Name
@@ -337,7 +344,11 @@ func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.Vulnerabilit
 			description = description[:1021] + "..."
 		}
 
-		findingID := truncateWithHash(fmt.Sprintf("%s-%s-%s", Namespace, FullImageName, vulnerabilities.VulnerabilityID), 512)
+		rawFindingID := fmt.Sprintf("%s-%s-%s", Namespace, FullImageName, vulnerabilities.VulnerabilityID)
+		if includeAccountID {
+			rawFindingID = fmt.Sprintf("%s-%s-%s-%s", AWSAccountID, Namespace, FullImageName, vulnerabilities.VulnerabilityID)
+		}
+		findingID := truncateWithHash(rawFindingID, 512)
 		title := truncateWithHash(fmt.Sprintf("%s/%s/%s:%s %s", Namespace, ImageName, Container, Tag, vulnerabilities.VulnerabilityID), 256)
 		resourceID := truncateWithHash(fmt.Sprintf("%s/%s", Namespace, ImageName), 512)
 

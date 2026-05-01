@@ -43,7 +43,7 @@ func TestBuildVulnerabilityReportFindingsIncludesNamespace(t *testing.T) {
 		},
 	}
 
-	findings := buildVulnerabilityReportFindings(report, "123456789012", "eu-central-1")
+	findings := buildVulnerabilityReportFindings(report, "123456789012", "eu-central-1", false)
 
 	require.Len(t, findings, 1)
 
@@ -90,13 +90,37 @@ func TestBuildVulnerabilityReportFindingsTruncatesSecurityHubFields(t *testing.T
 		},
 	}
 
-	findings := buildVulnerabilityReportFindings(report, "123456789012", "eu-central-1")
+	findings := buildVulnerabilityReportFindings(report, "123456789012", "eu-central-1", false)
 
 	require.Len(t, findings, 1)
 	assert.LessOrEqual(t, len([]rune(aws.ToString(findings[0].Id))), 512)
 	assert.LessOrEqual(t, len([]rune(aws.ToString(findings[0].Title))), 256)
 	require.Len(t, findings[0].Resources, 1)
 	assert.LessOrEqual(t, len([]rune(aws.ToString(findings[0].Resources[0].Id))), 512)
+}
+
+func TestBuildVulnerabilityReportFindingsIncludesAccountID(t *testing.T) {
+	report := &v1alpha1.VulnerabilityReport{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "replicaset-nginx-7c9d",
+			Namespace: "payments",
+			Labels:    map[string]string{"trivy-operator.container.name": "nginx"},
+		},
+		Report: v1alpha1.VulnerabilityReportData{
+			Registry: v1alpha1.Registry{Server: "docker.io"},
+			Artifact: v1alpha1.Artifact{Repository: "library/nginx", Tag: "1.25.0"},
+			Vulnerabilities: []v1alpha1.Vulnerability{
+				{VulnerabilityID: "CVE-2026-0001", Severity: v1alpha1.SeverityHigh, Title: "test"},
+			},
+		},
+	}
+
+	withoutAccount := buildVulnerabilityReportFindings(report, "123456789012", "eu-central-1", false)
+	withAccount := buildVulnerabilityReportFindings(report, "123456789012", "eu-central-1", true)
+
+	require.Len(t, withAccount, 1)
+	assert.Contains(t, aws.ToString(withAccount[0].Id), "123456789012-")
+	assert.NotContains(t, aws.ToString(withoutAccount[0].Id), "123456789012-")
 }
 
 func TestTruncateWithHash(t *testing.T) {
