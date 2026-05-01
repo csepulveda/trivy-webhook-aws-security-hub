@@ -11,10 +11,15 @@ A webhook receiver that processes security reports from [Trivy Operator](https:/
 ## Prerequisites
 
 - AWS account with [Security Hub](https://aws.amazon.com/security-hub/) enabled.
-- The **Aqua Security** product integration accepted in Security Hub (`Aqua Security: Aqua Security`).
+- The **Aqua Security** product integration enabled in Security Hub — **must be done before deploying**, otherwise all imports will fail with `AccessDeniedException`:
+  ```bash
+  aws securityhub enable-import-findings-for-product \
+    --product-arn arn:aws:securityhub:<region>::product/aquasecurity/aquasecurity \
+    --region <region>
+  ```
 - Kubernetes cluster with [Trivy Operator](https://github.com/aquasecurity/trivy-operator) installed.
 - [Helm](https://helm.sh/) ≥ 3.
-- IAM role or access keys with `securityhub:BatchImportFindings` permission.
+- IAM role with `securityhub:BatchImportFindings` permission, associated via [IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html).
 
 ## Installation
 
@@ -44,7 +49,8 @@ Replace `trivy-webhook.default` with `<release-name>.<namespace>` matching your 
 | `config.CONFIG_AUDIT_ENABLE` | Process `ConfigAuditReport` | `"false"` |
 | `config.INFRA_ASSESSMENT_ENABLE` | Process `InfraAssessmentReport` | `"false"` |
 | `config.CLUSTER_COMPLIANCE_ENABLE` | Process `ClusterComplianceReport` | `"false"` |
-| `config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS account ID — useful in multi-account Security Hub organizations where the same CVE can appear across member accounts | `"false"` |
+| `config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS account ID — recommended in multi-account Security Hub organizations | `"false"` |
+| `config.CLUSTER_NAME` | Cluster identifier included in finding IDs and `ProductFields` — required when multiple clusters share the same account to prevent finding ID collisions | `""` |
 
 ### Extra environment variables
 

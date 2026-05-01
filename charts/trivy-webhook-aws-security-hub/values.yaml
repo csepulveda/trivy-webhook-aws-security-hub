@@ -34,6 +34,7 @@ fullnameOverride: ""
 ## @description config.CLUSTER_COMPLIANCE_ENABLE: Enable cluster compliance.
 ## @description config.VULNERABILITY_ENABLE: Enable vulnerability assessment.
 ## @description config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID: Prefix finding IDs with the AWS account ID (useful in multi-account Security Hub orgs).
+## @description config.CLUSTER_NAME: Cluster identifier included in finding IDs and ProductFields. Required when multiple clusters share the same account to prevent finding ID collisions.
 config:
   AWS_REGION: eu-central-1
   INFRA_ASSESSMENT_ENABLE: false
@@ -41,6 +42,7 @@ config:
   CLUSTER_COMPLIANCE_ENABLE: false
   VULNERABILITY_ENABLE: true
   INCLUDE_ACCOUNT_ID_IN_FINDING_ID: false
+  CLUSTER_NAME: ""
 
 ## @param extraenvs [array] Extra environment variables to set for the trivy-webhook container.
 ## @description Extra environment variables to set for the trivy-webhook container.

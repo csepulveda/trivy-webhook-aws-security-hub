@@ -49,6 +49,8 @@ spec:
               value: {{ .Values.config.VULNERABILITY_ENABLE | quote }}
             - name: INCLUDE_ACCOUNT_ID_IN_FINDING_ID
               value: {{ .Values.config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID | quote }}
+            - name: CLUSTER_NAME
+              value: {{ .Values.config.CLUSTER_NAME | quote }}
             {{ if .Values.extraenvs }}
               {{- toYaml .Values.extraenvs | nindent 12 }}
             {{- end }}
