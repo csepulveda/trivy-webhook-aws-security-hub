@@ -70,40 +70,43 @@ helm install trivy-webhook oci://ghcr.io/csepulveda/charts/trivy-webhook-aws-sec
 
 ---
 
-### Multi-account, multiple clusters with Security Hub Organizations
+### Multi-account, multiple clusters with AWS Organizations integration
 
-The recommended architecture for organizations with multiple AWS accounts. Each webhook instance sends findings to **its own account's Security Hub** — never cross-account. AWS Organizations handles the aggregation centrally.
+The recommended architecture for organizations with multiple AWS accounts. Each webhook instance sends findings to **its own account's Security Hub** — never cross-account. The AWS Organizations integration with a delegated administrator account handles aggregation centrally.
 
 ```
 Account A / Cluster A ──→ Security Hub (Account A)  ──┐
-Account B / Cluster B ──→ Security Hub (Account B)  ──┤──→ Security Hub Delegated Admin
+Account B / Cluster B ──→ Security Hub (Account B)  ──┤──→ Delegated administrator account
 Account C / Cluster C ──→ Security Hub (Account C)  ──┘     (central visibility)
 ```
 
-Each account must have the Aqua Security product enabled (see Prerequisites). Enable `INCLUDE_ACCOUNT_ID_IN_FINDING_ID` so findings carrying the same CVE from different accounts remain distinct in the aggregated view:
+Each account must have the Aqua Security product enabled (see Prerequisites). The delegated administrator account natively shows the `AwsAccountId` and region of every finding, so **`INCLUDE_ACCOUNT_ID_IN_FINDING_ID` is not needed** in this setup. Use `CLUSTER_NAME` if multiple clusters exist within the same account:
 
 ```bash
 helm install trivy-webhook oci://ghcr.io/csepulveda/charts/trivy-webhook-aws-security-hub \
   --set config.AWS_REGION=us-east-1 \
   --set config.CLUSTER_NAME=prod-cluster \
-  --set config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID=true \
   --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::123456789012:role/trivy-webhook
 ```
 
-**Security Hub Organizations setup** (one-time, run from the management account):
+**AWS Organizations integration setup** (one-time, run from the management account):
 
 ```bash
-# Designate a delegated administrator for Security Hub
+# Designate a delegated administrator account for Security Hub
 aws securityhub enable-organization-admin-account \
-  --admin-account-id <central-security-account-id>
+  --admin-account-id <delegated-administrator-account-id>
 
-# From the delegated admin account, enable auto-enrollment for new member accounts
+# From the delegated administrator account, enable auto-enrollment for new member accounts
 aws securityhub update-organization-configuration \
   --auto-enable \
   --auto-enable-standards DEFAULT
+
+# Optionally configure a finding aggregator to consolidate findings across regions
+aws securityhub create-finding-aggregator \
+  --region-linking-type ALL_REGIONS
 ```
 
-See the [AWS Security Hub Organizations documentation](https://docs.aws.amazon.com/securityhub/latest/userguide/securityhub-accounts-orgs.html) for the full setup guide.
+See the [AWS Security Hub with AWS Organizations documentation](https://docs.aws.amazon.com/securityhub/latest/userguide/securityhub-accounts-orgs.html) for the full setup guide.
 
 ---
 
@@ -145,7 +148,7 @@ helm install trivy-webhook oci://ghcr.io/csepulveda/charts/trivy-webhook-aws-sec
 | `INFRA_ASSESSMENT_ENABLE` | Process `InfraAssessmentReport` | `true` |
 | `CLUSTER_COMPLIANCE_ENABLE` | Process `ClusterComplianceReport` | `true` |
 | `CLUSTER_NAME` | Cluster identifier included in finding IDs and `ProductFields` — required when multiple clusters share the same account to prevent finding ID collisions | `""` |
-| `INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS Account ID — recommended in multi-account Security Hub organizations | `false` |
+| `INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS Account ID. Supported but not recommended — when using the AWS Organizations integration, the delegated administrator account already shows `AwsAccountId` and region natively for every finding | `false` |
 | `AWS_REGION` | AWS region where Security Hub is enabled | — |
 | `AWS_ACCESS_KEY_ID` | AWS access key (standard SDK env var) | — |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key (standard SDK env var) | — |

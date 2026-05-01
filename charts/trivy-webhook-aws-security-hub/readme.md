@@ -49,7 +49,7 @@ Replace `trivy-webhook.default` with `<release-name>.<namespace>` matching your 
 | `config.CONFIG_AUDIT_ENABLE` | Process `ConfigAuditReport` | `"false"` |
 | `config.INFRA_ASSESSMENT_ENABLE` | Process `InfraAssessmentReport` | `"false"` |
 | `config.CLUSTER_COMPLIANCE_ENABLE` | Process `ClusterComplianceReport` | `"false"` |
-| `config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS account ID — recommended in multi-account Security Hub organizations | `"false"` |
+| `config.INCLUDE_ACCOUNT_ID_IN_FINDING_ID` | Prefix finding IDs with the AWS account ID. Supported but not recommended — when using the AWS Organizations integration, the delegated administrator account already shows `AwsAccountId` and region natively for every finding | `"false"` |
 | `config.CLUSTER_NAME` | Cluster identifier included in finding IDs and `ProductFields` — required when multiple clusters share the same account to prevent finding ID collisions | `""` |
 
 ### Extra environment variables
