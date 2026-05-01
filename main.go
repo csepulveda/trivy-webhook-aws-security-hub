@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,7 @@ type Config struct {
 	VulnerabilityEnable     bool
 }
 
+// LoadConfig reads feature flags from environment variables.
 func LoadConfig() Config {
 	return Config{
 		InfraAssessmentEnable:   tools.ParseEnvBool("INFRA_ASSESSMENT_ENABLE", true),
@@ -42,6 +44,7 @@ func LoadConfig() Config {
 	}
 }
 
+// PrintConfig logs the active feature flag configuration.
 func PrintConfig(cfg Config) {
 	log.Printf("Loaded Configuration: %+v", cfg)
 }
@@ -293,7 +296,14 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 	// Prepare variables
 	AWSAccountID := aws.ToString(callerIdentity.Account)
 	AWSRegion := cfg.Region
+
+	return buildVulnerabilityReportFindings(vulnerabilityReport, AWSAccountID, AWSRegion), nil
+}
+
+func buildVulnerabilityReportFindings(vulnerabilityReport *v1alpha1.VulnerabilityReport, AWSAccountID string, AWSRegion string) []types.AwsSecurityFinding {
 	ProductArn := fmt.Sprintf("arn:aws:securityhub:%s::product/aquasecurity/aquasecurity", AWSRegion)
+	Namespace := vulnerabilityReport.Namespace
+	ReportName := vulnerabilityReport.Name
 	Container := vulnerabilityReport.Labels["trivy-operator.container.name"]
 	Registry := vulnerabilityReport.Report.Registry.Server
 	Repository := vulnerabilityReport.Report.Artifact.Repository
@@ -327,9 +337,13 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 			description = description[:1021] + "..."
 		}
 
+		findingID := truncateWithHash(fmt.Sprintf("%s-%s-%s", Namespace, FullImageName, vulnerabilities.VulnerabilityID), 512)
+		title := truncateWithHash(fmt.Sprintf("%s/%s/%s:%s %s", Namespace, ImageName, Container, Tag, vulnerabilities.VulnerabilityID), 256)
+		resourceID := truncateWithHash(fmt.Sprintf("%s/%s", Namespace, ImageName), 512)
+
 		findings = append(findings, types.AwsSecurityFinding{
 			SchemaVersion: aws.String("2018-10-08"),
-			Id:            aws.String(fmt.Sprintf("%s-%s", FullImageName, vulnerabilities.VulnerabilityID)),
+			Id:            aws.String(findingID),
 			ProductArn:    aws.String(ProductArn),
 			GeneratorId:   aws.String(fmt.Sprintf("Trivy/%s", vulnerabilities.VulnerabilityID)),
 			AwsAccountId:  aws.String(AWSAccountID),
@@ -337,7 +351,7 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 			CreatedAt:     aws.String(time.Now().Format(time.RFC3339)),
 			UpdatedAt:     aws.String(time.Now().Format(time.RFC3339)),
 			Severity:      &types.Severity{Label: types.SeverityLabel(severity)},
-			Title:         aws.String(fmt.Sprintf("%s/%s:%s %s", ImageName, Container, Tag, vulnerabilities.VulnerabilityID)),
+			Title:         aws.String(title),
 			Description:   aws.String(description),
 			Remediation: &types.Remediation{
 				Recommendation: &types.Recommendation{
@@ -345,23 +359,28 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 					Url:  aws.String(vulnerabilities.PrimaryLink),
 				},
 			},
-			ProductFields: map[string]string{"Product Name": "Trivy"},
+			ProductFields: map[string]string{
+				"Product Name": "Trivy",
+				"Namespace":    Namespace,
+			},
 			Resources: []types.Resource{
 				{
 					Type:      aws.String("Container"),
-					Id:        aws.String(ImageName),
+					Id:        aws.String(resourceID),
 					Partition: types.PartitionAws,
 					Region:    aws.String(AWSRegion),
 					Details: &types.ResourceDetails{
 						Other: map[string]string{
-							"Container Image":   ImageName,
-							"CVE ID":            vulnerabilities.VulnerabilityID,
-							"CVE Title":         vulnerabilities.Title,
-							"PkgName":           vulnerabilities.Resource,
-							"Installed Package": vulnerabilities.InstalledVersion,
-							"Patched Package":   vulnerabilities.FixedVersion,
-							"NvdCvssScoreV3":    fmt.Sprintf("%f", tools.GetVulnScore(vulnerabilities)),
-							"NvdCvssVectorV3":   "",
+							"Kubernetes Namespace": Namespace,
+							"Kubernetes Report":    ReportName,
+							"Container Image":      ImageName,
+							"CVE ID":               vulnerabilities.VulnerabilityID,
+							"CVE Title":            vulnerabilities.Title,
+							"PkgName":              vulnerabilities.Resource,
+							"Installed Package":    vulnerabilities.InstalledVersion,
+							"Patched Package":      vulnerabilities.FixedVersion,
+							"NvdCvssScoreV3":       fmt.Sprintf("%f", tools.GetVulnScore(vulnerabilities)),
+							"NvdCvssVectorV3":      "",
 						},
 					},
 				},
@@ -370,7 +389,25 @@ func getVulnerabilityReportFindings(body []byte) ([]types.AwsSecurityFinding, er
 		})
 	}
 
-	return findings, err
+	return findings
+}
+
+func truncateWithHash(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= 0 {
+		return ""
+	}
+
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(s)))
+	suffix := "-" + hash[:12]
+	if maxLen <= len(suffix) {
+		return hash[:maxLen]
+	}
+
+	return string(runes[:maxLen-len(suffix)]) + suffix
 }
 
 // Import findings to AWS Security Hub in batches of 100
