@@ -176,6 +176,7 @@ func TestBuildConfigAuditReportFindingsNoOwnerReferences(t *testing.T) {
 
 	require.Len(t, findings, 1)
 	assert.Contains(t, aws.ToString(findings[0].Id), "cluster-level-report")
+	assert.Contains(t, aws.ToString(findings[0].Title), "cluster-level-report")
 	assert.Equal(t, "container foo is privileged", findings[0].Resources[0].Details.Other["Message"])
 }
 
